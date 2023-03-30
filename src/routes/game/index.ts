@@ -7,7 +7,7 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
     methods: ["GET", "POST"],
   });
 
-  fastify.post("/", async (req, res) => {
+  fastify.post("/create", async (req, res) => {
     const playerId = req.body as string;
     const roomId = generateRoomId();
     createGameRoom(roomId, playerId);
