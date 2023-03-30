@@ -13,13 +13,30 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
     createGameRoom(roomId, playerId);
     res.send({ roomId });
   });
+  fastify.post("/join", async (req, res) => {
+    const payload = req.body as string;
+
+    const { playerId, roomId } = JSON.parse(payload);
+    // console.log("#####", playerId, roomId);
+
+    // console.log(gameRooms[roomId]);
+    if (gameRooms[roomId].players.length >= 2)
+      return res.unauthorized("you cannot join this room");
+
+    if (!gameRoomExists(roomId))
+      return res.notFound(`Game room number ${roomId} doesn't exist`);
+
+    gameRooms[roomId].players.push({ id: playerId, role: "joiner" });
+    console.log("$$$$", gameRooms[roomId]);
+    return res.send({ playerId, roomId });
+  });
 };
 
 export default game;
 
 interface GameRoom {
   id?: string;
-  players?: Player[];
+  players: Player[];
   board: Array<string | null>;
   currentPlayer: string;
 }
