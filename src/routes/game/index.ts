@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from "fastify";
+import fastifyWebsocket from "@fastify/websocket";
 import fastifyCors from "@fastify/cors";
 
 const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
@@ -26,6 +27,44 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
     gameRooms[roomId].players.playerTwo = playerId;
     // console.log("$$$$", gameRooms[roomId]);
     return res.send({ playerId, roomId });
+  });
+
+  fastify.register(fastifyWebsocket);
+
+  fastify.register(async function (fastify) {
+    fastify.addHook("preValidation", async (request, reply) => {
+      // If game exist and playerId exists in the room
+      const { roomId } = request.params as { roomId: string };
+      const { playerId } = request.query as {
+        playerId: string;
+      };
+      console.log("$$preValidation", roomId, playerId);
+
+      if (!playerExists(roomId, playerId)) {
+        reply.code(401).send("not authenticated");
+      }
+      // console.log("############you are validated");
+    });
+
+    fastify.get("/:roomId", { websocket: true }, (connection, request) => {
+      const socket = connection.socket;
+      const { roomId } = request.params as { roomId: string };
+
+      const { playerId } = request.query as {
+        playerId: string;
+      };
+
+      console.log("$$$playing", roomId, playerId);
+
+      socket.on("message", (message) => {
+        connection.socket.send("hi from server");
+      });
+
+      console.log("#### play", roomId, playerId);
+      socket.on("close", () => {
+        console.log("connection closed");
+      });
+    });
   });
 };
 
@@ -58,6 +97,15 @@ function generateRoomId() {
 function gameRoomExists(roomId: string) {
   if (Object.hasOwn(gameRooms, roomId)) {
     return gameRooms[roomId];
+  }
+  return false;
+}
+
+function playerExists(roomId: string, playerId: string) {
+  const room = gameRoomExists(roomId);
+  if (room) {
+    Object.hasOwn(room.players, playerId);
+    return playerId;
   }
   return false;
 }
