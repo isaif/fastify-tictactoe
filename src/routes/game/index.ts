@@ -13,21 +13,18 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
     createGameRoom(roomId, playerId);
     res.send({ roomId });
   });
+
   fastify.post("/join", async (req, res) => {
     const payload = req.body as string;
 
     const { playerId, roomId } = JSON.parse(payload);
-    // console.log("#####", playerId, roomId);
-
-    // console.log(gameRooms[roomId]);
-    if (gameRooms[roomId].players.length >= 2)
-      return res.unauthorized("you cannot join this room");
 
     if (!gameRoomExists(roomId))
       return res.notFound(`Game room number ${roomId} doesn't exist`);
 
-    gameRooms[roomId].players.push({ id: playerId, role: "joiner" });
-    console.log("$$$$", gameRooms[roomId]);
+    // TODO: only two players should be allowed
+    gameRooms[roomId].players.playerTwo = playerId;
+    // console.log("$$$$", gameRooms[roomId]);
     return res.send({ playerId, roomId });
   });
 };
@@ -36,17 +33,15 @@ export default game;
 
 interface GameRoom {
   id?: string;
-  players: Player[];
+  players: Player;
   board: Array<string | null>;
   currentPlayer: string;
 }
 
 interface Player {
-  id: string;
-  role: string;
+  playerOne: string;
+  playerTwo: string | null;
 }
-
-// const gameRooms: GameRoom | null = null;
 
 const gameRooms: { [key: string]: GameRoom } = {};
 
@@ -61,16 +56,17 @@ function generateRoomId() {
 
 // Check if a game room exists with the given ID
 function gameRoomExists(roomId: string) {
-  if (gameRooms) {
-    return Object.hasOwn(gameRooms, roomId);
+  if (Object.hasOwn(gameRooms, roomId)) {
+    return gameRooms[roomId];
   }
+  return false;
 }
 
 // Create a new game room with the given ID
 function createGameRoom(roomId: string, playerId: string) {
   if (!gameRooms[roomId]) {
     gameRooms[roomId] = {
-      players: [{ id: playerId, role: "creator" }],
+      players: { playerOne: playerId, playerTwo: null },
       board: Array(9).fill(null),
       currentPlayer: "X",
     };
