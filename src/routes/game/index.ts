@@ -8,26 +8,39 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
     methods: ["GET", "POST"],
   });
 
-  fastify.post("/create", async (req, res) => {
-    const playerId = req.body as string;
+  fastify.post<{ Body: { playerId: string } }>("/create", async (req, res) => {
+    const { playerId } = req.body;
     const roomId = generateRoomId();
-    createGameRoom(roomId, playerId);
-    res.send({ roomId });
+    const gameRoom = createGameRoom(roomId, playerId);
+    res.send({ roomId, gameRoom });
   });
 
-  fastify.post("/join", async (req, res) => {
-    const payload = req.body as string;
+  fastify.post<{ Body: { playerId: string; roomId: string } }>(
+    "/join",
+    async (req, res) => {
+      // const payload = req.body as string;
+      // console.log("$$$$$$$$ body", req.body);
 
-    const { playerId, roomId } = JSON.parse(payload);
+      const { playerId, roomId } = req.body;
+      const currentGameRoom = findGameRoomById(roomId);
 
-    if (!gameRoomExists(roomId))
+      if (currentGameRoom) {
+        // Before adding player check if it is already in current game
+        // A player cannot play with oneself
+        if (findPlayerInRoom(roomId, playerId)) {
+          return res.forbidden("You cannot play with yourself");
+        }
+
+        if (currentGameRoom.players.length === 1) {
+          gameRooms[roomId].players.push({ id: playerId, role: "O" });
+          return res.send({ playerId, roomId, gameRooms });
+        }
+
+        return res.forbidden("This room already have two players");
+      }
       return res.notFound(`Game room number ${roomId} doesn't exist`);
-
-    // TODO: only two players should be allowed
-    gameRooms[roomId].players.playerTwo = playerId;
-    // console.log("$$$$", gameRooms[roomId]);
-    return res.send({ playerId, roomId });
-  });
+    }
+  );
 
   fastify.register(fastifyWebsocket);
 
@@ -38,31 +51,39 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
       const { playerId } = request.query as {
         playerId: string;
       };
-      console.log("$$preValidation", roomId, playerId);
+      // console.log(request.params, request.query);
+      // console.log("$$preValidation", roomId, playerId);
 
-      if (!playerExists(roomId, playerId)) {
+      if (!findPlayerInRoom(roomId, playerId)) {
         reply.code(401).send("not authenticated");
       }
-      // console.log("############you are validated");
     });
 
-    fastify.get("/:roomId", { websocket: true }, (connection, request) => {
+    fastify.get<{
+      Params: { roomId: string };
+      Querystring: { playerId: string };
+    }>("/:roomId", { websocket: true }, (connection, request) => {
       const socket = connection.socket;
-      const { roomId } = request.params as { roomId: string };
 
-      const { playerId } = request.query as {
-        playerId: string;
-      };
+      const { roomId } = request.params;
+      // const { playerId } = request.query as {
+      //   playerId: string;
+      // };
 
-      console.log("$$$playing", roomId, playerId);
+      const game = gameRooms[roomId];
+      const players = game.players;
+
+      console.log("Game Room", gameRooms);
+      socket.send(JSON.stringify(players));
 
       socket.on("message", (message) => {
-        connection.socket.send("hi from server");
+        connection.socket.send(JSON.stringify({ message: "hi from server" }));
       });
 
-      console.log("#### play", roomId, playerId);
+      // console.log("#### play", roomId, playerId);
       socket.on("close", () => {
-        console.log("connection closed");
+        // console.log("connection closed");
+        // socket.send("this is closed");
       });
     });
   });
@@ -71,52 +92,57 @@ const game: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
 export default game;
 
 interface GameRoom {
-  id?: string;
-  players: Player;
+  players: Player[];
   board: Array<string | null>;
   currentPlayer: string;
 }
 
 interface Player {
-  playerOne: string;
-  playerTwo: string | null;
+  id: string;
+  name?: string;
+  role: "X" | "O";
 }
 
 const gameRooms: { [key: string]: GameRoom } = {};
+// const players: { [key: string]: Player } = {};
 
 // Generate a unique room ID
 function generateRoomId() {
   let roomId = "";
   do {
     roomId = Math.random().toString().slice(2, 6);
-  } while (gameRoomExists(roomId));
+  } while (findGameRoomById(roomId));
   return roomId;
 }
 
 // Check if a game room exists with the given ID
-function gameRoomExists(roomId: string) {
-  if (Object.hasOwn(gameRooms, roomId)) {
-    return gameRooms[roomId];
-  }
-  return false;
+function findGameRoomById(roomId: string): GameRoom | null {
+  return gameRooms[roomId];
 }
 
-function playerExists(roomId: string, playerId: string) {
-  const room = gameRoomExists(roomId);
+function findPlayerInRoom(roomId: string, playerId: string): boolean {
+  const room = findGameRoomById(roomId);
+  let player = null;
+
   if (room) {
-    Object.hasOwn(room.players, playerId);
-    return playerId;
+    player = room.players.find((player) => player.id === playerId);
   }
+
+  if (player) return true;
   return false;
 }
 
 // Create a new game room with the given ID
-function createGameRoom(roomId: string, playerId: string) {
-  if (!gameRooms[roomId]) {
-    gameRooms[roomId] = {
-      players: { playerOne: playerId, playerTwo: null },
+function createGameRoom(roomId: string, playerId: string): GameRoom {
+  let currentGame = gameRooms[roomId];
+  if (!currentGame) {
+    currentGame = {
+      players: [],
       board: Array(9).fill(null),
       currentPlayer: "X",
     };
   }
+  currentGame.players.push({ id: playerId, role: "X" });
+  gameRooms[roomId] = currentGame;
+  return currentGame;
 }
